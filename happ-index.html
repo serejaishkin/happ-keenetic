@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>happ-keenetic // control panel</title>
+
+<style>
+  :root {
+    --bg: #060a08;
+    --panel: #0c1410;
+    --neon: #39ff14;
+    --neon-dim: #1c8a0d;
+    --neon-glow: rgba(57, 255, 20, 0.55);
+    --red: #ff3b3b;
+    --text-dim: #6fae63;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    background-image:
+      linear-gradient(rgba(57,255,20,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(57,255,20,0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--neon);
+    font-family: Consolas, "Courier New", monospace;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 18px 60px; }
+  header { border-bottom: 1px solid var(--neon-dim); padding-bottom: 16px; margin-bottom: 24px; }
+  header h1 { font-size: 22px; letter-spacing: 3px; margin: 0; text-shadow: 0 0 8px var(--neon-glow); }
+  header h1 span { color: var(--text-dim); font-size: 14px; letter-spacing: 1px; display: block; margin-top: 4px; }
+
+  .panel {
+    border: 1px solid var(--neon-dim);
+    background: var(--panel);
+    border-radius: 6px;
+    padding: 18px;
+    margin-bottom: 22px;
+    box-shadow: 0 0 22px rgba(57,255,20,0.05) inset;
+  }
+  .panel-title { font-size: 13px; letter-spacing: 3px; color: var(--text-dim); margin: 0 0 14px 0; text-transform: uppercase; }
+  .panel-hint { font-size: 11px; color: var(--text-dim); margin: 10px 0 0 0; letter-spacing: 0.5px; }
+
+  .hero { text-align: center; padding: 28px 18px; }
+  .engine-switch {
+    display: inline-flex;
+    border: 1px solid var(--neon-dim);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 22px;
+  }
+  .engine-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 10px 22px;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .engine-btn.active {
+    background: rgba(57,255,20,0.15);
+    color: var(--neon);
+    box-shadow: 0 0 12px var(--neon-glow);
+  }
+  .engine-hint { font-size: 11px; color: var(--text-dim); margin-bottom: 18px; letter-spacing: 0.5px; }
+
+  .power-btn {
+    width: 108px; height: 108px;
+    border-radius: 50%;
+    border: 2px solid var(--neon);
+    background: radial-gradient(circle, rgba(57,255,20,0.14) 0%, transparent 70%);
+    box-shadow: 0 0 26px var(--neon-glow);
+    color: var(--neon);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+  .power-btn:hover { box-shadow: 0 0 36px var(--neon-glow); }
+  .power-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .power-btn.off { border-color: var(--neon-dim); color: var(--text-dim); box-shadow: none; background: transparent; }
+  .hero-status { margin-top: 16px; font-size: 14px; letter-spacing: 3px; }
+  .hero-timer { margin-top: 4px; font-size: 24px; font-weight: bold; text-shadow: 0 0 8px var(--neon-glow); min-height: 30px; }
+  .hero-active { margin-top: 8px; font-size: 12px; color: var(--text-dim); word-break: break-all; }
+
+  .link-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .link-label-input { flex: 0 0 160px; }
+  .link-url-input { flex: 1 1 auto; }
+  .link-remove-btn {
+    flex: 0 0 auto; background: transparent; border: 1px solid var(--red);
+    color: var(--red); border-radius: 4px; width: 40px; height: 40px; cursor: pointer; font-size: 14px;
+  }
+  .link-remove-btn:hover { background: rgba(255,59,59,0.12); }
+
+  input[type="text"], input[type="number"] {
+    background: #05100a; border: 1px solid var(--neon-dim); color: var(--neon);
+    font-family: inherit; font-size: 14px; padding: 11px 13px; border-radius: 4px; outline: none;
+  }
+  input[type="text"]:focus, input[type="number"]:focus { border-color: var(--neon); box-shadow: 0 0 8px var(--neon-glow); }
+  input[type="text"]::placeholder { color: var(--text-dim); }
+  .search-input { width: 100%; margin-bottom: 14px; }
+
+  button { font-family: inherit; cursor: pointer; border-radius: 4px; letter-spacing: 1.5px; transition: all 0.15s ease; }
+  .btn { background: transparent; border: 1px solid var(--neon); color: var(--neon); padding: 12px 20px; font-size: 13px; }
+  .btn:hover { background: rgba(57,255,20,0.12); box-shadow: 0 0 12px var(--neon-glow); }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  .btn-big { width: 100%; padding: 16px; font-size: 15px; font-weight: bold; }
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn-row .btn-big { flex: 1 1 220px; }
+  .url-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .group { border: 1px solid var(--neon-dim); border-radius: 6px; margin-bottom: 10px; overflow: hidden; }
+  .group-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; cursor: pointer; background: rgba(57,255,20,0.04);
+  }
+  .group-header:hover { background: rgba(57,255,20,0.08); }
+  .group-title { font-size: 13px; letter-spacing: 1px; }
+  .group-count { color: var(--text-dim); font-size: 11px; margin-left: 8px; }
+  .group-chevron { display: inline-block; transition: transform 0.2s ease; color: var(--text-dim); }
+  .group.collapsed .group-chevron { transform: rotate(-90deg); }
+  .group.collapsed .group-body { display: none; }
+
+  .server-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 14px; border-top: 1px solid rgba(57,255,20,0.1); cursor: pointer;
+  }
+  .server-row:hover { background: rgba(57,255,20,0.05); }
+  .server-row.active { background: rgba(57,255,20,0.09); box-shadow: inset 3px 0 0 var(--neon); }
+  .server-row.loading { opacity: 0.5; pointer-events: none; }
+  .server-row-main { display: flex; flex-direction: column; gap: 2px; overflow: hidden; min-width: 0; }
+  .server-row-name { font-size: 13px; word-break: break-all; }
+  .server-row-proto { font-size: 10px; color: var(--text-dim); letter-spacing: 0.5px; }
+  .server-row-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .server-row-badge {
+    font-size: 9px; letter-spacing: 1px; color: #001a00; background: var(--neon);
+    padding: 3px 6px; border-radius: 3px; box-shadow: 0 0 6px var(--neon-glow);
+  }
+  .server-row-lat { font-size: 11px; color: var(--text-dim); min-width: 54px; text-align: right; }
+  .server-row-lat.lat-good { color: var(--neon); text-shadow: 0 0 6px var(--neon-glow); }
+  .server-row-lat.lat-bad { color: var(--red); text-shadow: 0 0 6px rgba(255,59,59,0.5); }
+  .empty-hint { color: var(--text-dim); font-size: 13px; padding: 8px 2px; }
+
+  .settings-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px; align-items: end; margin-bottom: 14px;
+  }
+  .field-label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; letter-spacing: 1px; color: var(--text-dim); }
+  .field-label input[type="number"] { width: 100%; }
+  .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: 1px; color: var(--neon); cursor: pointer; }
+  .checkbox-label input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--neon); cursor: pointer; }
+
+  .terminal {
+    background: #000; border: 1px solid var(--neon-dim); border-radius: 5px;
+    height: 260px; overflow-y: auto; padding: 12px 14px; font-size: 12.5px; line-height: 1.55;
+  }
+  .terminal .line { white-space: pre-wrap; word-break: break-all; color: var(--neon); opacity: 0.92; }
+  .terminal .line.empty { color: var(--text-dim); }
+  .terminal::-webkit-scrollbar { width: 8px; }
+  .terminal::-webkit-scrollbar-track { background: #050805; }
+  .terminal::-webkit-scrollbar-thumb { background: var(--neon-dim); border-radius: 4px; }
+
+  .toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: #05100a; border: 1px solid var(--neon); color: var(--neon);
+    padding: 12px 18px; border-radius: 5px; font-size: 13px;
+    box-shadow: 0 0 16px var(--neon-glow);
+    opacity: 0; transform: translateY(10px); transition: all 0.25s ease;
+    pointer-events: none; max-width: 320px; z-index: 999;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { border-color: var(--red); color: var(--red); box-shadow: 0 0 16px rgba(255,59,59,0.5); }
+  footer { text-align: center; color: var(--text-dim); font-size: 11px; letter-spacing: 2px; margin-top: 30px; }
+</style>
+
+<script>
+  window.API_BASE = window.location.origin;
+  window.__collapsed = {};
+  window.__linksLoaded = false;
+  window.__coreRunning = false;
+  window.__uptimeBase = 0;
+  window.__uptimeBaseAtMs = 0;
+  window.__state = { groups: [], active: '' };
+  window.__engine = 'xray';
+
+  window.showToast = function (message, isError) {
+    var el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.remove('err');
+    if (isError) el.classList.add('err');
+    el.classList.add('show');
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer = setTimeout(function () { el.classList.remove('show'); }, 3200);
+  };
+
+  window.apiFetch = async function (path, options) {
+    var res = await fetch(window.API_BASE + path, options || {});
+    var data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok || (data && data.ok === false)) {
+      var msg = (data && data.error) ? data.error : ('HTTP ' + res.status);
+      throw new Error(msg);
+    }
+    return data;
+  };
+
+  window.applyEngineUI = function (engine) {
+    window.__engine = engine || 'xray';
+    var xrayBtn = document.getElementById('engineXray');
+    var singBtn = document.getElementById('engineSingbox');
+    var hint = document.getElementById('engineHint');
+    if (xrayBtn) xrayBtn.classList.toggle('active', window.__engine === 'xray');
+    if (singBtn) singBtn.classList.toggle('active', window.__engine === 'sing-box');
+    if (hint) {
+      hint.textContent = window.__engine === 'sing-box'
+        ? 'Sing-box: TUN-интерфейс happ-tun + SOCKS/HTTP. Трафик маршрутизируется на уровне ядра.'
+        : 'Xray: локальный SOCKS5/HTTP. Зарегистрируйте 127.0.0.1:порт в Keenetic → Подключения.';
+    }
+  };
+
+  window.switchEngine = async function (engine) {
+    if (engine === window.__engine) return;
+    var socksInput = document.getElementById('socksPortInput');
+    var httpInput = document.getElementById('httpPortInput');
+    var cronInput = document.getElementById('cronCheckInput');
+    var payload = {
+      socks_port: parseInt(socksInput ? socksInput.value : 10808, 10) || 10808,
+      http_port: parseInt(httpInput ? httpInput.value : 10809, 10) || 10809,
+      cron_check: cronInput ? !!cronInput.checked : true,
+      engine: engine
+    };
+    try {
+      await window.apiFetch('/api/save-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      window.applyEngineUI(engine);
+      window.showToast('Движок: ' + (engine === 'sing-box' ? 'Sing-box (TUN)' : 'Xray (Proxy)'), false);
+      await window.refreshStatus();
+    } catch (e) {
+      window.showToast('Ошибка переключения: ' + e.message, true);
+    }
+  };
+
+  window.applyConnectionState = function (running, uptimeSeconds, activeTag, activeLabel) {
+    window.__coreRunning = running;
+    window.__uptimeBase = uptimeSeconds || 0;
+    window.__uptimeBaseAtMs = Date.now();
+    var btn = document.getElementById('powerBtn');
+    var statusEl = document.getElementById('heroStatus');
+    var activeEl = document.getElementById('heroActive');
+    if (btn) btn.classList.toggle('off', !running);
+    if (statusEl) statusEl.textContent = running ? 'ПОДКЛЮЧЕНО' : 'ОТКЛЮЧЕНО';
+    if (activeEl) {
+      activeEl.textContent = activeTag
+        ? (activeLabel ? activeLabel + ' — ' + activeTag : activeTag)
+        : 'Сервер не выбран';
+    }
+    window.tickTimer();
+  };
+
+  window.tickTimer = function () {
+    var el = document.getElementById('heroTimer');
+    if (!el) return;
+    if (!window.__coreRunning || !window.__uptimeBase) { el.textContent = ''; return; }
+    var extra = Math.max(0, Math.floor((Date.now() - window.__uptimeBaseAtMs) / 1000));
+    var total = window.__uptimeBase + extra;
+    var hh = Math.floor(total / 3600);
+    var mm = Math.floor((total % 3600) / 60);
+    var ss = total % 60;
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    el.textContent = (hh > 0 ? pad(hh) + ':' : '') + pad(mm) + ':' + pad(ss);
+  };
+
+  window.togglePower = async function () {
+    var btn = document.getElementById('powerBtn');
+    if (!btn) return;
+    var isOff = btn.classList.contains('off');
+    btn.disabled = true;
+    try {
+      await window.apiFetch(isOff ? '/api/connect' : '/api/disconnect', { method: 'POST' });
+      await window.refreshStatus();
+    } catch (e) {
+      window.showToast('Ошибка: ' + e.message, true);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  window.refreshStatus = async function () {
+    try {
+      var data = await window.apiFetch('/api/status');
+      if (!window.__linksLoaded) {
+        window.renderLinkRows(data.sub_links || []);
+        window.__linksLoaded = true;
+      }
+      var socksInput = document.getElementById('socksPortInput');
+      var httpInput = document.getElementById('httpPortInput');
+      var cronInput = document.getElementById('cronCheckInput');
+      if (data.settings) {
+        if (socksInput && document.activeElement !== socksInput) socksInput.value = data.settings.socks_port || 10808;
+        if (httpInput && document.activeElement !== httpInput) httpInput.value = data.settings.http_port || 10809;
+        if (cronInput) cronInput.checked = !!data.settings.cron_check;
+        window.applyEngineUI(data.settings.engine || data.engine || 'xray');
+      }
+      var groups = data.groups || [];
+      var active = data.active_server || '';
+      window.renderGroups(groups, active);
+      var activeLabel = '';
+      groups.forEach(function (g) {
+        (g.servers || []).forEach(function (s) { if (s.tag === active) activeLabel = g.label; });
+      });
+      var running = !!(data.core_running || data.xray_running);
+      window.applyConnectionState(running, data.uptime_seconds || 0, active, activeLabel);
+    } catch (e) {
+      window.applyConnectionState(false, 0, '', '');
+    }
+  };
+
+  window.renderGroups = function (groups, active) {
+    window.__state.groups = groups || [];
+    window.__state.active = active || '';
+    window.__renderGroupsView();
+  };
+
+  window.__renderGroupsView = function () {
+    var container = document.getElementById('serverGroups');
+    if (!container) return;
+    var filterInput = document.getElementById('serverSearch');
+    var filter = filterInput ? filterInput.value.trim().toLowerCase() : '';
+    var groups = window.__state.groups;
+    var active = window.__state.active;
+    container.innerHTML = '';
+    if (!groups.length) {
+      var hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = 'Список серверов пуст. Сохраните ссылки и нажмите SYNC SERVERS.';
+      container.appendChild(hint);
+      return;
+    }
+    var anyVisible = false;
+    groups.forEach(function (group) {
+      var items = (group.servers || []).filter(function (s) {
+        return !filter || s.tag.toLowerCase().indexOf(filter) !== -1;
+      });
+      if (!items.length) return;
+      anyVisible = true;
+      var collapsed = !!window.__collapsed[group.label];
+      var groupEl = document.createElement('div');
+      groupEl.className = 'group' + (collapsed ? ' collapsed' : '');
+      var header = document.createElement('div');
+      header.className = 'group-header';
+      var titleSpan = document.createElement('span');
+      titleSpan.className = 'group-title';
+      titleSpan.textContent = group.label;
+      var countSpan = document.createElement('span');
+      countSpan.className = 'group-count';
+      countSpan.textContent = '(' + items.length + ')';
+      titleSpan.appendChild(countSpan);
+      var chevron = document.createElement('span');
+      chevron.className = 'group-chevron';
+      chevron.textContent = '\u25BE';
+      header.appendChild(titleSpan);
+      header.appendChild(chevron);
+      header.addEventListener('click', function () {
+        window.__collapsed[group.label] = !window.__collapsed[group.label];
+        window.__renderGroupsView();
+      });
+      groupEl.appendChild(header);
+      var body = document.createElement('div');
+      body.className = 'group-body';
+      items.forEach(function (s) {
+        var row = document.createElement('div');
+        row.className = 'server-row' + (s.tag === active ? ' active' : '');
+        row.dataset.tag = s.tag;
+        var main = document.createElement('div');
+        main.className = 'server-row-main';
+        var nameEl = document.createElement('div');
+        nameEl.className = 'server-row-name';
+        nameEl.textContent = s.tag;
+        var protoParts = [s.protocol, s.network, s.security].filter(function (x) { return x; });
+        var protoEl = document.createElement('div');
+        protoEl.className = 'server-row-proto';
+        protoEl.textContent = protoParts.join(' / ').toUpperCase();
+        main.appendChild(nameEl);
+        main.appendChild(protoEl);
+        var right = document.createElement('div');
+        right.className = 'server-row-right';
+        if (s.tag === active) {
+          var badge = document.createElement('span');
+          badge.className = 'server-row-badge';
+          badge.textContent = 'ACTIVE';
+          right.appendChild(badge);
+        }
+        var lat = document.createElement('span');
+        lat.className = 'server-row-lat';
+        lat.textContent = '\u2014';
+        right.appendChild(lat);
+        row.appendChild(main);
+        row.appendChild(right);
+        row.addEventListener('click', function () { window.selectServer(s.tag, row); });
+        body.appendChild(row);
+      });
+      groupEl.appendChild(body);
+      container.appendChild(groupEl);
+    });
+    if (!anyVisible) {
+      var noMatch = document.createElement('div');
+      noMatch.className = 'empty-hint';
+      noMatch.textContent = 'Ничего не найдено.';
+      container.appendChild(noMatch);
+    }
+  };
+
+  window.selectServer = async function (tag, rowEl) {
+    if (rowEl) rowEl.classList.add('loading');
+    try {
+      await window.apiFetch('/api/select-server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: tag })
+      });
+      window.showToast('Активный сервер: ' + tag, false);
+      await window.refreshStatus();
+    } catch (e) {
+      window.showToast('Ошибка переключения: ' + e.message, true);
+    } finally {
+      if (rowEl) rowEl.classList.remove('loading');
+    }
+  };
+
+  window.addLinkRow = function (label, url) {
+    var container = document.getElementById('linksRows');
+    if (!container) return;
+    var row = document.createElement('div');
+    row.className = 'link-row';
+    var labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'link-label-input';
+    labelInput.placeholder = 'Метка группы';
+    labelInput.value = label || '';
+    var urlInput = document.createElement('input');
+    urlInput.type = 'text';
+    urlInput.className = 'link-url-input';
+    urlInput.placeholder = 'https://...';
+    urlInput.value = url || '';
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'link-remove-btn';
+    removeBtn.textContent = '\u2715';
+    removeBtn.addEventListener('click', function () { row.remove(); });
+    row.appendChild(labelInput);
+    row.appendChild(urlInput);
+    row.appendChild(removeBtn);
+    container.appendChild(row);
+  };
+
+  window.renderLinkRows = function (links) {
+    var container = document.getElementById('linksRows');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!links || !links.length) { window.addLinkRow('', ''); return; }
+    links.forEach(function (l) { window.addLinkRow(l.label, l.url); });
+  };
+
+  window.saveLinks = async function () {
+    var rows = document.querySelectorAll('#linksRows .link-row');
+    var links = [];
+    rows.forEach(function (row) {
+      var labelEl = row.querySelector('.link-label-input');
+      var urlEl = row.querySelector('.link-url-input');
+      var url = urlEl ? urlEl.value.trim() : '';
+      var label = labelEl ? labelEl.value.trim() : '';
+      if (url) links.push({ label: label, url: url });
+    });
+    var btn = document.getElementById('saveLinksBtn');
+    if (btn) btn.disabled = true;
+    try {
+      await window.apiFetch('/api/save-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(links)
+      });
+      window.showToast('Сохранено ссылок: ' + links.length, false);
+    } catch (e) {
+      window.showToast('Ошибка сохранения ссылок: ' + e.message, true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  window.triggerSync = async function () {
+    var btn = document.getElementById('syncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'SYNCING...'; }
+    try {
+      var data = await window.apiFetch('/api/sync', { method: 'POST' });
+      window.showToast('Синхронизировано: ' + (data.servers ? data.servers.length : 0) + ' серверов', false);
+      await window.refreshStatus();
+    } catch (e) {
+      window.showToast('Ошибка синхронизации: ' + e.message, true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'SYNC SERVERS'; }
+    }
+  };
+
+  window.pingServers = async function () {
+    var btn = document.getElementById('pingBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'PINGING...'; }
+    try {
+      var data = await window.apiFetch('/api/ping');
+      var results = data.ping || {};
+      document.querySelectorAll('.server-row').forEach(function (row) {
+        var tag = row.dataset.tag;
+        var latEl = row.querySelector('.server-row-lat');
+        if (!latEl) return;
+        var val = results[tag];
+        if (!val) { latEl.textContent = '\u2014'; latEl.className = 'server-row-lat'; return; }
+        if (val === 'timeout') {
+          latEl.textContent = 'TIMEOUT';
+          latEl.className = 'server-row-lat lat-bad';
+        } else {
+          latEl.textContent = val;
+          latEl.className = 'server-row-lat lat-good';
+        }
+      });
+    } catch (e) {
+      window.showToast('Ошибка пинга: ' + e.message, true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'PING SERVERS'; }
+    }
+  };
+
+  window.saveSettings = async function () {
+    var btn = document.getElementById('saveSettingsBtn');
+    var socksInput = document.getElementById('socksPortInput');
+    var httpInput = document.getElementById('httpPortInput');
+    var cronInput = document.getElementById('cronCheckInput');
+    var payload = {
+      socks_port: parseInt(socksInput ? socksInput.value : 10808, 10) || 10808,
+      http_port: parseInt(httpInput ? httpInput.value : 10809, 10) || 10809,
+      cron_check: cronInput ? !!cronInput.checked : true,
+      engine: window.__engine || 'xray'
+    };
+    if (btn) btn.disabled = true;
+    try {
+      await window.apiFetch('/api/save-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      window.showToast('Настройки сохранены. Примените SYNC SERVERS для портов.', false);
+    } catch (e) {
+      window.showToast('Ошибка сохранения настроек: ' + e.message, true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  window.refreshLogs = async function () {
+    try {
+      var data = await window.apiFetch('/api/logs');
+      var term = document.getElementById('terminal');
+      if (!term) return;
+      var logs = data.logs || [];
+      term.innerHTML = '';
+      if (!logs.length) {
+        var empty = document.createElement('div');
+        empty.className = 'line empty';
+        empty.textContent = '-- нет записей --';
+        term.appendChild(empty);
+      } else {
+        logs.forEach(function (line) {
+          var div = document.createElement('div');
+          div.className = 'line';
+          div.textContent = line;
+          term.appendChild(div);
+        });
+      }
+      term.scrollTop = term.scrollHeight;
+    } catch (e) { /* skip */ }
+  };
+
+  window.__init = function () {
+    window.refreshStatus();
+    window.refreshLogs();
+    setInterval(window.refreshLogs, 1500);
+    setInterval(window.refreshStatus, 4000);
+    setInterval(window.tickTimer, 1000);
+
+    var powerBtn = document.getElementById('powerBtn');
+    if (powerBtn) powerBtn.addEventListener('click', window.togglePower);
+    var xrayBtn = document.getElementById('engineXray');
+    if (xrayBtn) xrayBtn.addEventListener('click', function () { window.switchEngine('xray'); });
+    var singBtn = document.getElementById('engineSingbox');
+    if (singBtn) singBtn.addEventListener('click', function () { window.switchEngine('sing-box'); });
+    var addLinkBtn = document.getElementById('addLinkBtn');
+    if (addLinkBtn) addLinkBtn.addEventListener('click', function () { window.addLinkRow('', ''); });
+    var saveLinksBtn = document.getElementById('saveLinksBtn');
+    if (saveLinksBtn) saveLinksBtn.addEventListener('click', window.saveLinks);
+    var syncBtn = document.getElementById('syncBtn');
+    if (syncBtn) syncBtn.addEventListener('click', window.triggerSync);
+    var pingBtn = document.getElementById('pingBtn');
+    if (pingBtn) pingBtn.addEventListener('click', window.pingServers);
+    var saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', window.saveSettings);
+    var searchInput = document.getElementById('serverSearch');
+    if (searchInput) searchInput.addEventListener('input', function () { window.__renderGroupsView(); });
+  };
+
+  document.addEventListener('DOMContentLoaded', window.__init);
+</script>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>HAPP // KEENETIC<span>xray &amp; sing-box hybrid panel</span></h1>
+  </header>
+
+  <div class="panel hero">
+    <div class="engine-switch">
+      <button class="engine-btn active" id="engineXray" type="button">XRAY / PROXY</button>
+      <button class="engine-btn" id="engineSingbox" type="button">SING-BOX / TUN</button>
+    </div>
+    <div class="engine-hint" id="engineHint">Xray: локальный SOCKS5/HTTP. Зарегистрируйте 127.0.0.1:порт в Keenetic → Подключения.</div>
+
+    <button class="power-btn off" id="powerBtn" type="button" aria-label="connect / disconnect">
+      <svg viewBox="0 0 24 24" width="42" height="42">
+        <path d="M12 2v10M18.36 6.64a9 9 0 1 1-12.73 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div class="hero-status" id="heroStatus">ОТКЛЮЧЕНО</div>
+    <div class="hero-timer" id="heroTimer"></div>
+    <div class="hero-active" id="heroActive">Сервер не выбран</div>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title">Subscription Links</p>
+    <div id="linksRows"></div>
+    <div class="url-row">
+      <button class="btn" id="addLinkBtn" type="button">+ ADD LINK</button>
+      <button class="btn" id="saveLinksBtn" type="button">SAVE LINKS</button>
+    </div>
+    <p class="panel-hint">Метка группы (например "Liberty VPN") станет заголовком секции в списке серверов ниже.</p>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title">Servers</p>
+    <input type="text" id="serverSearch" class="search-input" placeholder="Введите текст для поиска" autocomplete="off" spellcheck="false">
+    <div id="serverGroups">
+      <div class="empty-hint">Загрузка...</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="btn-row">
+      <button class="btn btn-big" id="syncBtn" type="button">SYNC SERVERS</button>
+      <button class="btn btn-big" id="pingBtn" type="button">PING SERVERS</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title">CyberSettings</p>
+    <div class="settings-grid">
+      <label class="field-label">SOCKS5 PORT
+        <input type="number" id="socksPortInput" min="1" max="65535" value="10808">
+      </label>
+      <label class="field-label">HTTP PORT
+        <input type="number" id="httpPortInput" min="1" max="65535" value="10809">
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="cronCheckInput" checked>
+        АВТОСИНК В 04:00 (CRON)
+      </label>
+      <button class="btn" id="saveSettingsBtn" type="button">SAVE SETTINGS</button>
+    </div>
+    <p class="panel-hint">Изменение портов вступит в силу после следующей синхронизации (SYNC SERVERS).</p>
+  </div>
+
+  <div class="panel">
+    <p class="panel-title">Live Logs</p>
+    <div class="terminal" id="terminal">
+      <div class="line empty">-- ожидание данных --</div>
+    </div>
+  </div>
+
+  <footer>happ-keenetic // KeeneticOS · Entware · mipsle</footer>
+</div>
+
+<div class="toast" id="toast"></div>
+</body>
+</html>
