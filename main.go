@@ -24,6 +24,7 @@ const (
 	stateFile    = "state.json"
 	settingsFile = "settings.json"
 	subMetaFile  = "sub_meta.json"
+	staticFile   = "static.html"
 	xrayBin      = "/opt/sbin/xray"
 	singBoxBin   = "/opt/sbin/sing-box"
 	xrayConfig   = "/opt/etc/xray/config.json"
@@ -515,6 +516,18 @@ func handleSingboxConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	b, _ := json.MarshalIndent(cfg, "", "  ")
+	w.Write(b)
+}
+
+// ---------- Static UI (reads from disk) ----------
+
+func handleStatic(w http.ResponseWriter, r *http.Request) {
+	b, err := os.ReadFile(filepath.Join(appDir, staticFile))
+	if err != nil {
+		http.Error(w, "UI not found", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(b)
 }
 
