@@ -33,13 +33,15 @@ const (
 )
 
 type AppSettings struct {
-	ListenAddr  string `json:"listen_addr"`
-	SocksPort   int    `json:"socks_port"`
-	HttpPort    int    `json:"http_port"`
-	RedirPort   int    `json:"redir_port"`
-	CronCheck   bool   `json:"cron_check"`
-	Engine      string `json:"engine"`       // "xray" | "sing-box"
-	RoutingMode string `json:"routing_mode"` // "none" | "redirect"
+	ListenAddr        string `json:"listen_addr"`
+	SocksPort         int    `json:"socks_port"`
+	HttpPort          int    `json:"http_port"`
+	RedirPort         int    `json:"redir_port"`
+	CronCheck         bool   `json:"cron_check"`
+	Engine            string `json:"engine"`            // "xray" | "sing-box"
+	RoutingMode       string `json:"routing_mode"`      // "none" | "redirect"
+	FailoverEnabled   bool   `json:"failover_enabled"`
+	FailoverInterval  int    `json:"failover_interval"` // seconds, 0 = off
 }
 
 type AppState struct {
@@ -61,6 +63,11 @@ var (
 	settings AppSettings
 	state    AppState
 	subMeta  SubMeta
+
+	// v2.4: failover state
+	failoverMu        sync.Mutex
+	failoverFails     int
+	lastFailoverCheck time.Time
 )
 
 func main() {
@@ -91,6 +98,9 @@ func main() {
 	if settings.RoutingMode == "" {
 		settings.RoutingMode = "none"
 	}
+	if settings.FailoverInterval == 0 {
+		settings.FailoverInterval = 30
+	}
 
 	// v2.3: auto-detect free web UI port
 	origAddr := settings.ListenAddr
@@ -116,7 +126,10 @@ func main() {
 
 	mux.HandleFunc("/", handleStatic)
 
-	log.Printf("happ-keenetic v2.3 starting on %s", settings.ListenAddr)
+	// v2.4: start failover goroutine
+	go failoverLoop()
+
+	log.Printf("happ-keenetic v2.4 starting on %s", settings.ListenAddr)
 	log.Fatal(http.ListenAndServe(settings.ListenAddr, mux))
 }
 
@@ -161,6 +174,98 @@ func autoListenAddr(addr string) string {
 		log.Fatal("no free port found for web UI")
 	}
 	return fmt.Sprintf(":%d", free)
+}
+
+// ---------- Failover (v2.4) ----------
+
+func failoverLoop() {
+	for {
+		time.Sleep(5 * time.Second)
+
+		mu.RLock()
+		enabled := settings.FailoverEnabled
+		interval := settings.FailoverInterval
+		connected := state.Connected
+		mu.RUnlock()
+
+		if !enabled || interval <= 0 || !connected {
+			continue
+		}
+
+		time.Sleep(time.Duration(interval-5) * time.Second)
+
+		mu.RLock()
+		if !state.Connected {
+			mu.RUnlock()
+			continue
+		}
+		subID := state.ActiveSubID
+		tag := state.ActiveTag
+		servers := subMeta.Servers[subID]
+		mu.RUnlock()
+
+		if len(servers) == 0 {
+			continue
+		}
+
+		var currentSrv *ServerConfig
+		var currentIdx int
+		for i := range servers {
+			if servers[i].Tag == tag {
+				currentSrv = &servers[i]
+				currentIdx = i
+				break
+			}
+		}
+		if currentSrv == nil {
+			continue
+		}
+
+		failoverMu.Lock()
+		lastFailoverCheck = time.Now()
+		failoverMu.Unlock()
+
+		timeout := 3 * time.Second
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(currentSrv.Address, strconv.Itoa(currentSrv.Port)), timeout)
+		if err == nil {
+			conn.Close()
+			failoverMu.Lock()
+			failoverFails = 0
+			failoverMu.Unlock()
+			continue
+		}
+
+		failoverMu.Lock()
+		failoverFails++
+		ff := failoverFails
+		failoverMu.Unlock()
+
+		log.Printf("failover: ping failed for %s (%s:%d), fail count: %d", tag, currentSrv.Address, currentSrv.Port, ff)
+
+		if ff < 3 {
+			continue
+		}
+
+		// Switch to next server
+		nextIdx := (currentIdx + 1) % len(servers)
+		nextSrv := &servers[nextIdx]
+
+		log.Printf("failover: switching from %s to %s (%s:%d)", tag, nextSrv.Tag, nextSrv.Address, nextSrv.Port)
+
+		mu.Lock()
+		state.ActiveTag = nextSrv.Tag
+		mu.Unlock()
+		saveState()
+
+		if err := restartEngine(nextSrv); err != nil {
+			log.Printf("failover: restartEngine error: %v", err)
+			continue
+		}
+
+		failoverMu.Lock()
+		failoverFails = 0
+		failoverMu.Unlock()
+	}
 }
 
 // ---------- Storage ----------
@@ -215,13 +320,23 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		portStatus["redir"] = checkPortAvailable(fmt.Sprintf("0.0.0.0:%d", settings.RedirPort))
 	}
 
+	failoverMu.Lock()
+	ff := failoverFails
+	lfc := lastFailoverCheck
+	failoverMu.Unlock()
+
 	resp := map[string]interface{}{
-		"settings":      settings,
-		"state":         state,
-		"sub_meta":      subMeta,
-		"engines":       []string{"xray", "sing-box"},
-		"routing_modes": []string{"none", "redirect"},
-		"port_status":   portStatus,
+		"settings":       settings,
+		"state":          state,
+		"sub_meta":       subMeta,
+		"engines":        []string{"xray", "sing-box"},
+		"routing_modes":  []string{"none", "redirect"},
+		"port_status":    portStatus,
+		"failover": map[string]interface{}{
+			"fails":            ff,
+			"last_check":       lfc.Format("15:04:05"),
+			"last_check_unix":  lfc.Unix(),
+		},
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -253,6 +368,10 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 			settings.RedirPort = s.RedirPort
 		}
 		settings.CronCheck = s.CronCheck
+		settings.FailoverEnabled = s.FailoverEnabled
+		if s.FailoverInterval > 0 {
+			settings.FailoverInterval = s.FailoverInterval
+		}
 		mu.Unlock()
 		saveSettings()
 		updateCron()
@@ -742,11 +861,11 @@ func buildSingboxConfig(srv *ServerConfig, socksPort, httpPort, redirPort int) m
 
 	if settings.RoutingMode == "redirect" {
 		inbounds = append(inbounds, map[string]interface{}{
-			"type":                       "redirect",
-			"tag":                        "redir-in",
-			"listen":                     "0.0.0.0",
-			"listen_port":                redirPort,
-			"sniff":                      true,
+			"type":         "redirect",
+			"tag":          "redir-in",
+			"listen":       "0.0.0.0",
+			"listen_port":  redirPort,
+			"sniff":        true,
 			"sniff_override_destination": false,
 		})
 	}
@@ -819,7 +938,7 @@ func fetchSubscription(urlStr, fallback string) (*SubscriptionResult, error) {
 
 func updateCron() {
 	if !settings.CronCheck {
-		exec.Command("sh", "-c", fmt.Sprintf("sed -i '/happ-keenetic.*api\\\\/sync/d' %s", cronFile)).Run()
+		exec.Command("sh", "-c", fmt.Sprintf("sed -i '/happ-keenetic.*api\\/sync/d' %s", cronFile)).Run()
 		return
 	}
 
@@ -832,7 +951,7 @@ func updateCron() {
 
 	line := fmt.Sprintf("0 */%d * * * root curl -s -X POST http://127.0.0.1%s/api/sync >/dev/null 2>&1 # happ-keenetic auto-sync\n", interval, settings.ListenAddr)
 
-	exec.Command("sh", "-c", fmt.Sprintf("sed -i '/happ-keenetic.*api\\\\/sync/d' %s", cronFile)).Run()
+	exec.Command("sh", "-c", fmt.Sprintf("sed -i '/happ-keenetic.*api\\/sync/d' %s", cronFile)).Run()
 	f, _ := os.OpenFile(cronFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if f != nil {
 		f.WriteString(line)

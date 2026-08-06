@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>happ-keenetic v2.3</title>
+<title>happ-keenetic v2.4</title>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#0f0f0f;color:#eee;max-width:900px;margin:0 auto;padding:20px}
 h1{color:#4CAF50;font-size:1.5rem}
@@ -20,16 +20,23 @@ button:hover{background:#45a049}
 .awg-link{font-size:0.8rem;color:#888;word-break:break-all;margin-top:4px}
 .warn{color:#f44336;font-size:0.85rem;margin:4px 0}
 .ok{color:#4CAF50;font-size:0.85rem;margin:4px 0}
+.row{display:flex;gap:8px;align-items:center}
+.row input[type="checkbox"]{width:auto}
+.row input[type="number"]{width:80px}
 </style>
 </head>
 <body>
-<h1>happ-keenetic v2.3</h1>
+<h1>happ-keenetic v2.4</h1>
 
 <div class="card">
 <h3>Настройки</h3>
 <div id="port-warn"></div>
 <select id="engine"><option value="xray">xray-core</option><option value="sing-box">sing-box</option></select>
 <select id="routing_mode"><option value="none">SOCKS/HTTP only</option><option value="redirect">Transparent Redirect</option></select>
+<div class="row">
+  <input type="checkbox" id="failover_enabled"> <label for="failover_enabled">Auto-failover</label>
+  <input type="number" id="failover_interval" min="10" max="300" value="30"> <span style="font-size:0.85rem;color:#888">сек</span>
+</div>
 <button onclick="saveSettings()">Сохранить</button>
 </div>
 
@@ -39,7 +46,7 @@ button:hover{background:#45a049}
 <input id="sub_fallback" placeholder="Fallback URL (опционально)">
 <button onclick="addSub()">Добавить</button>
 <div id="subs"></div>
-<button onclick="sync()">🔄 Синхронизировать</button>
+<button onclick="sync()">&#x1F504; Синхронизировать</button>
 </div>
 
 <div class="card">
@@ -55,6 +62,7 @@ button:hover{background:#45a049}
 <div class="card">
 <h3>Статус</h3>
 <div id="status">Загрузка...</div>
+<div id="failover-status" class="meta" style="margin-top:6px"></div>
 <button onclick="disconnect()" style="background:#f44336">Отключить</button>
 </div>
 
@@ -68,26 +76,29 @@ async function load(){
   current = d;
   document.getElementById('engine').value = d.settings.engine;
   document.getElementById('routing_mode').value = d.settings.routing_mode;
+  document.getElementById('failover_enabled').checked = d.settings.failover_enabled;
+  document.getElementById('failover_interval').value = d.settings.failover_interval || 30;
   renderPortWarn(d.port_status);
   renderSubs(d.state.subscriptions);
   renderServers(d.sub_meta.servers || {});
   renderMeta(d.sub_meta);
   renderStatus(d.state);
+  renderFailover(d.failover);
   renderAWGLinks(d.state.subscriptions, d.sub_meta.servers || {});
 }
 function renderPortWarn(ps){
   let html = '';
-  if(ps && !ps.socks) html += '<div class="warn">⚠️ SOCKS порт '+current.settings.socks_port+' занят другим процессом</div>';
-  if(ps && !ps.http) html += '<div class="warn">⚠️ HTTP порт '+current.settings.http_port+' занят другим процессом</div>';
-  if(ps && !ps.redir) html += '<div class="warn">⚠️ Redirect порт '+current.settings.redir_port+' занят другим процессом</div>';
+  if(ps && !ps.socks) html += '<div class="warn">&#x26A0; SOCKS порт '+current.settings.socks_port+' занят другим процессом</div>';
+  if(ps && !ps.http) html += '<div class="warn">&#x26A0; HTTP порт '+current.settings.http_port+' занят другим процессом</div>';
+  if(ps && !ps.redir) html += '<div class="warn">&#x26A0; Redirect порт '+current.settings.redir_port+' занят другим процессом</div>';
   if(ps && ps.socks && ps.http && (current.settings.routing_mode=='none' || ps.redir)){
-    html += '<div class="ok">✅ Все порты свободны</div>';
+    html += '<div class="ok">&#x2705; Все порты свободны</div>';
   }
   document.getElementById('port-warn').innerHTML = html;
 }
 function renderSubs(subs){
   document.getElementById('subs').innerHTML = subs.map(s=>
-    '<div class="server"><span>'+(s.title||s.id)+'</span><button onclick="removeSub(\''+s.id+'\')">Удалить</button></div>'
+    '<div class="server"><span>'+(s.title||s.id)+'</span><button onclick="removeSub(''+s.id+'')">Удалить</button></div>'
   ).join('');
 }
 function renderServers(groups){
@@ -96,9 +107,9 @@ function renderServers(groups){
     html += '<div style="margin:10px 0"><b>'+(current.state.subscriptions.find(x=>x.id==sid)?.title||sid)+'</b></div>';
     html += list.map(s=>{
       const active = current.state.connected && current.state.active_tag==s.tag ? 'active' : '';
-      return '<div class="server '+active+'" onclick="connect(\''+sid+'\',\''+s.tag+'\')">'+
+      return '<div class="server '+active+'" onclick="connect(''+sid+'',''+s.tag+'')">'+
         '<span>'+(s.name||s.tag)+'</span>'+
-        '<span class="ping" onclick="event.stopPropagation();ping(\''+sid+'\',\''+s.tag+'\')">ping</span>'+
+        '<span class="ping" onclick="event.stopPropagation();ping(''+sid+'',''+s.tag+'')">ping</span>'+
       '</div>';
     }).join('');
   }
@@ -111,8 +122,19 @@ function renderMeta(m){
   document.getElementById('meta').innerText = t.join(' | ');
 }
 function renderStatus(st){
-  let s = st.connected ? '🟢 Подключен: '+st.active_tag : '🔴 Отключен';
+  let s = st.connected ? '&#x1F7E2; Подключен: '+st.active_tag : '&#x1F534; Отключен';
   document.getElementById('status').innerText = s;
+}
+function renderFailover(fo){
+  if(!fo) return;
+  let html = '';
+  if(current.settings.failover_enabled){
+    html += 'Failover: включен | Проверка: '+fo.last_check+' | Фейлы: '+fo.fails+'/3';
+    if(fo.fails > 0) html = '<span style="color:#f44336">'+html+'</span>';
+  } else {
+    html = 'Failover: выключен';
+  }
+  document.getElementById('failover-status').innerHTML = html;
 }
 function renderAWGLinks(subs, groups){
   let html = '';
@@ -128,7 +150,9 @@ function renderAWGLinks(subs, groups){
 async function saveSettings(){
   await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     engine: document.getElementById('engine').value,
-    routing_mode: document.getElementById('routing_mode').value
+    routing_mode: document.getElementById('routing_mode').value,
+    failover_enabled: document.getElementById('failover_enabled').checked,
+    failover_interval: parseInt(document.getElementById('failover_interval').value) || 30
   })});
   load();
 }
