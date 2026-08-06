@@ -92,6 +92,14 @@ func main() {
 		settings.RoutingMode = "none"
 	}
 
+	// v2.3: auto-detect free web UI port
+	origAddr := settings.ListenAddr
+	settings.ListenAddr = autoListenAddr(settings.ListenAddr)
+	if settings.ListenAddr != origAddr {
+		saveSettings()
+		log.Printf("WARNING: web UI port busy, switched to %s", settings.ListenAddr)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/status", handleStatus)
 	mux.HandleFunc("/api/settings", handleSettings)
@@ -110,6 +118,49 @@ func main() {
 
 	log.Printf("happ-keenetic v2.3 starting on %s", settings.ListenAddr)
 	log.Fatal(http.ListenAndServe(settings.ListenAddr, mux))
+}
+
+// ---------- Port helpers ----------
+
+func checkPortAvailable(addr string) bool {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
+}
+
+func findFreePort(host string, start int) int {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	for p := start; p < start+100; p++ {
+		addr := fmt.Sprintf("%s:%d", host, p)
+		if host == "" || host == "0.0.0.0" {
+			addr = fmt.Sprintf(":%d", p)
+		}
+		if checkPortAvailable(addr) {
+			return p
+		}
+	}
+	return 0
+}
+
+func autoListenAddr(addr string) string {
+	if checkPortAvailable(addr) {
+		return addr
+	}
+	_, portStr, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(portStr)
+	if port == 0 {
+		port = 3333
+	}
+	free := findFreePort("", port+1)
+	if free == 0 {
+		log.Fatal("no free port found for web UI")
+	}
+	return fmt.Sprintf(":%d", free)
 }
 
 // ---------- Storage ----------
@@ -153,12 +204,24 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	mu.RLock()
 	defer mu.RUnlock()
 
+	portStatus := map[string]interface{}{}
+	if state.Connected {
+		portStatus["socks"] = true
+		portStatus["http"] = true
+		portStatus["redir"] = true
+	} else {
+		portStatus["socks"] = checkPortAvailable(fmt.Sprintf("127.0.0.1:%d", settings.SocksPort))
+		portStatus["http"] = checkPortAvailable(fmt.Sprintf("127.0.0.1:%d", settings.HttpPort))
+		portStatus["redir"] = checkPortAvailable(fmt.Sprintf("0.0.0.0:%d", settings.RedirPort))
+	}
+
 	resp := map[string]interface{}{
 		"settings":      settings,
 		"state":         state,
 		"sub_meta":      subMeta,
 		"engines":       []string{"xray", "sing-box"},
 		"routing_modes": []string{"none", "redirect"},
+		"port_status":   portStatus,
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -536,11 +599,41 @@ func handleStatic(w http.ResponseWriter, r *http.Request) {
 func restartEngine(srv *ServerConfig) error {
 	stopEngine()
 
+	// v2.3: auto-detect free engine ports
+	socksPort := settings.SocksPort
+	httpPort := settings.HttpPort
+	redirPort := settings.RedirPort
+
+	if !checkPortAvailable(fmt.Sprintf("127.0.0.1:%d", socksPort)) {
+		free := findFreePort("127.0.0.1", socksPort+1)
+		if free == 0 {
+			return fmt.Errorf("no free port for socks in range %d-%d", socksPort+1, socksPort+100)
+		}
+		log.Printf("WARNING: socks port %d busy, using %d", socksPort, free)
+		socksPort = free
+	}
+	if !checkPortAvailable(fmt.Sprintf("127.0.0.1:%d", httpPort)) {
+		free := findFreePort("127.0.0.1", httpPort+1)
+		if free == 0 {
+			return fmt.Errorf("no free port for http in range %d-%d", httpPort+1, httpPort+100)
+		}
+		log.Printf("WARNING: http port %d busy, using %d", httpPort, free)
+		httpPort = free
+	}
+	if settings.RoutingMode == "redirect" && !checkPortAvailable(fmt.Sprintf(":%d", redirPort)) {
+		free := findFreePort("", redirPort+1)
+		if free == 0 {
+			return fmt.Errorf("no free port for redirect in range %d-%d", redirPort+1, redirPort+100)
+		}
+		log.Printf("WARNING: redirect port %d busy, using %d", redirPort, free)
+		redirPort = free
+	}
+
 	var cfg map[string]interface{}
 	if settings.Engine == "xray" {
-		cfg = buildXrayConfig(srv)
+		cfg = buildXrayConfig(srv, socksPort, httpPort, redirPort)
 	} else {
-		cfg = buildSingboxConfig(srv)
+		cfg = buildSingboxConfig(srv, socksPort, httpPort, redirPort)
 	}
 
 	b, _ := json.MarshalIndent(cfg, "", "  ")
@@ -564,20 +657,20 @@ func restartEngine(srv *ServerConfig) error {
 	time.Sleep(500 * time.Millisecond)
 
 	if settings.RoutingMode == "redirect" {
-		applyRedirectRules(true)
+		applyRedirectRules(true, redirPort)
 	}
 
 	return nil
 }
 
 func stopEngine() {
-	applyRedirectRules(false)
+	applyRedirectRules(false, 0)
 	exec.Command("killall", "-9", "xray").Run()
 	exec.Command("killall", "-9", "sing-box").Run()
 	time.Sleep(200 * time.Millisecond)
 }
 
-func applyRedirectRules(enable bool) {
+func applyRedirectRules(enable bool, redirPort int) {
 	if enable {
 		exec.Command("sh", "-c", fmt.Sprintf(`iptables -t nat -N HAPP_REDIR 2>/dev/null
 iptables -t nat -F HAPP_REDIR
@@ -586,7 +679,7 @@ iptables -t nat -A HAPP_REDIR -d 192.168.0.0/16 -j RETURN
 iptables -t nat -A HAPP_REDIR -d 10.0.0.0/8 -j RETURN
 iptables -t nat -A HAPP_REDIR -p tcp --dport 80 -j REDIRECT --to-ports %d
 iptables -t nat -A HAPP_REDIR -p tcp --dport 443 -j REDIRECT --to-ports %d
-iptables -t nat -C PREROUTING -j HAPP_REDIR 2>/dev/null || iptables -t nat -A PREROUTING -j HAPP_REDIR`, settings.RedirPort, settings.RedirPort)).Run()
+iptables -t nat -C PREROUTING -j HAPP_REDIR 2>/dev/null || iptables -t nat -A PREROUTING -j HAPP_REDIR`, redirPort, redirPort)).Run()
 	} else {
 		exec.Command("sh", "-c", `iptables -t nat -D PREROUTING -j HAPP_REDIR 2>/dev/null
 iptables -t nat -F HAPP_REDIR 2>/dev/null
@@ -596,19 +689,19 @@ iptables -t nat -X HAPP_REDIR 2>/dev/null`).Run()
 
 // ---------- Config builders ----------
 
-func buildXrayConfig(srv *ServerConfig) map[string]interface{} {
+func buildXrayConfig(srv *ServerConfig, socksPort, httpPort, redirPort int) map[string]interface{} {
 	inbounds := []map[string]interface{}{
 		{
 			"tag":      "socks-in",
 			"listen":   "127.0.0.1",
-			"port":     settings.SocksPort,
+			"port":     socksPort,
 			"protocol": "socks",
 			"settings": map[string]interface{}{"auth": "noauth", "udp": true},
 		},
 		{
 			"tag":      "http-in",
 			"listen":   "127.0.0.1",
-			"port":     settings.HttpPort,
+			"port":     httpPort,
 			"protocol": "http",
 			"settings": map[string]interface{}{},
 		},
@@ -619,7 +712,7 @@ func buildXrayConfig(srv *ServerConfig) map[string]interface{} {
 			"tag":      "redir-in",
 			"protocol": "dokodemo-door",
 			"listen":   "0.0.0.0",
-			"port":     settings.RedirPort,
+			"port":     redirPort,
 			"settings": map[string]interface{}{"network": "tcp,udp", "followRedirect": true},
 		})
 	}
@@ -641,10 +734,10 @@ func buildXrayConfig(srv *ServerConfig) map[string]interface{} {
 	}
 }
 
-func buildSingboxConfig(srv *ServerConfig) map[string]interface{} {
+func buildSingboxConfig(srv *ServerConfig, socksPort, httpPort, redirPort int) map[string]interface{} {
 	inbounds := []map[string]interface{}{
-		{"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": settings.SocksPort},
-		{"type": "http", "tag": "http-in", "listen": "127.0.0.1", "listen_port": settings.HttpPort},
+		{"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": socksPort},
+		{"type": "http", "tag": "http-in", "listen": "127.0.0.1", "listen_port": httpPort},
 	}
 
 	if settings.RoutingMode == "redirect" {
@@ -652,7 +745,7 @@ func buildSingboxConfig(srv *ServerConfig) map[string]interface{} {
 			"type":                       "redirect",
 			"tag":                        "redir-in",
 			"listen":                     "0.0.0.0",
-			"listen_port":                settings.RedirPort,
+			"listen_port":                redirPort,
 			"sniff":                      true,
 			"sniff_override_destination": false,
 		})

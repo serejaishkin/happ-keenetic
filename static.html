@@ -18,6 +18,8 @@ button:hover{background:#45a049}
 .meta{font-size:0.85rem;color:#888;margin-top:10px}
 .ping{float:right;color:#4CAF50;font-size:0.85rem}
 .awg-link{font-size:0.8rem;color:#888;word-break:break-all;margin-top:4px}
+.warn{color:#f44336;font-size:0.85rem;margin:4px 0}
+.ok{color:#4CAF50;font-size:0.85rem;margin:4px 0}
 </style>
 </head>
 <body>
@@ -25,6 +27,7 @@ button:hover{background:#45a049}
 
 <div class="card">
 <h3>Настройки</h3>
+<div id="port-warn"></div>
 <select id="engine"><option value="xray">xray-core</option><option value="sing-box">sing-box</option></select>
 <select id="routing_mode"><option value="none">SOCKS/HTTP only</option><option value="redirect">Transparent Redirect</option></select>
 <button onclick="saveSettings()">Сохранить</button>
@@ -65,11 +68,22 @@ async function load(){
   current = d;
   document.getElementById('engine').value = d.settings.engine;
   document.getElementById('routing_mode').value = d.settings.routing_mode;
+  renderPortWarn(d.port_status);
   renderSubs(d.state.subscriptions);
   renderServers(d.sub_meta.servers || {});
   renderMeta(d.sub_meta);
   renderStatus(d.state);
   renderAWGLinks(d.state.subscriptions, d.sub_meta.servers || {});
+}
+function renderPortWarn(ps){
+  let html = '';
+  if(ps && !ps.socks) html += '<div class="warn">⚠️ SOCKS порт '+current.settings.socks_port+' занят другим процессом</div>';
+  if(ps && !ps.http) html += '<div class="warn">⚠️ HTTP порт '+current.settings.http_port+' занят другим процессом</div>';
+  if(ps && !ps.redir) html += '<div class="warn">⚠️ Redirect порт '+current.settings.redir_port+' занят другим процессом</div>';
+  if(ps && ps.socks && ps.http && (current.settings.routing_mode=='none' || ps.redir)){
+    html += '<div class="ok">✅ Все порты свободны</div>';
+  }
+  document.getElementById('port-warn').innerHTML = html;
 }
 function renderSubs(subs){
   document.getElementById('subs').innerHTML = subs.map(s=>
