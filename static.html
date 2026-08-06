@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>happ-keenetic v2.3</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;background:#0f0f0f;color:#eee;max-width:900px;margin:0 auto;padding:20px}
+h1{color:#4CAF50;font-size:1.5rem}
+.card{background:#1a1a1a;border-radius:8px;padding:15px;margin:10px 0}
+input,select,button{width:100%;padding:10px;margin:5px 0;border-radius:6px;border:none;box-sizing:border-box}
+input,select{background:#2a2a2a;color:#eee}
+button{background:#4CAF50;color:#fff;cursor:pointer}
+button:hover{background:#45a049}
+.server{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#222;margin:5px 0;border-radius:6px;cursor:pointer}
+.server:hover{background:#333}
+.server.active{border-left:4px solid #4CAF50}
+.meta{font-size:0.85rem;color:#888;margin-top:10px}
+.ping{float:right;color:#4CAF50;font-size:0.85rem}
+.awg-link{font-size:0.8rem;color:#888;word-break:break-all;margin-top:4px}
+</style>
+</head>
+<body>
+<h1>happ-keenetic v2.3</h1>
+
+<div class="card">
+<h3>Настройки</h3>
+<select id="engine"><option value="xray">xray-core</option><option value="sing-box">sing-box</option></select>
+<select id="routing_mode"><option value="none">SOCKS/HTTP only</option><option value="redirect">Transparent Redirect</option></select>
+<button onclick="saveSettings()">Сохранить</button>
+</div>
+
+<div class="card">
+<h3>Подписки</h3>
+<input id="sub_url" placeholder="URL подписки">
+<input id="sub_fallback" placeholder="Fallback URL (опционально)">
+<button onclick="addSub()">Добавить</button>
+<div id="subs"></div>
+<button onclick="sync()">🔄 Синхронизировать</button>
+</div>
+
+<div class="card">
+<h3>Серверы <span id="meta" class="meta"></span></h3>
+<div id="servers"></div>
+</div>
+
+<div class="card">
+<h3>AWG-Manager ссылки</h3>
+<div id="awg-links" class="meta">Синхронизируйте подписку для генерации ссылок</div>
+</div>
+
+<div class="card">
+<h3>Статус</h3>
+<div id="status">Загрузка...</div>
+<button onclick="disconnect()" style="background:#f44336">Отключить</button>
+</div>
+
+<script>
+let current = {};
+
+async function api(path, opts){ return fetch(path, opts).then(r=>r.json()) }
+
+async function load(){
+  const d = await api('/api/status');
+  current = d;
+  document.getElementById('engine').value = d.settings.engine;
+  document.getElementById('routing_mode').value = d.settings.routing_mode;
+  renderSubs(d.state.subscriptions);
+  renderServers(d.sub_meta.servers || {});
+  renderMeta(d.sub_meta);
+  renderStatus(d.state);
+  renderAWGLinks(d.state.subscriptions, d.sub_meta.servers || {});
+}
+function renderSubs(subs){
+  document.getElementById('subs').innerHTML = subs.map(s=>
+    '<div class="server"><span>'+(s.title||s.id)+'</span><button onclick="removeSub(\''+s.id+'\')">Удалить</button></div>'
+  ).join('');
+}
+function renderServers(groups){
+  let html = '';
+  for(const [sid, list] of Object.entries(groups)){
+    html += '<div style="margin:10px 0"><b>'+(current.state.subscriptions.find(x=>x.id==sid)?.title||sid)+'</b></div>';
+    html += list.map(s=>{
+      const active = current.state.connected && current.state.active_tag==s.tag ? 'active' : '';
+      return '<div class="server '+active+'" onclick="connect(\''+sid+'\',\''+s.tag+'\')">'+
+        '<span>'+(s.name||s.tag)+'</span>'+
+        '<span class="ping" onclick="event.stopPropagation();ping(\''+sid+'\',\''+s.tag+'\')">ping</span>'+
+      '</div>';
+    }).join('');
+  }
+  document.getElementById('servers').innerHTML = html || '<div class="meta">Нет серверов. Нажмите Синхронизировать.</div>';
+}
+function renderMeta(m){
+  let t = [];
+  if(m.profile_title) t.push(m.profile_title);
+  if(m.subscription_userinfo) t.push(m.subscription_userinfo);
+  document.getElementById('meta').innerText = t.join(' | ');
+}
+function renderStatus(st){
+  let s = st.connected ? '🟢 Подключен: '+st.active_tag : '🔴 Отключен';
+  document.getElementById('status').innerText = s;
+}
+function renderAWGLinks(subs, groups){
+  let html = '';
+  for(const sub of subs){
+    if(!groups[sub.id]) continue;
+    const base = window.location.origin;
+    html += '<div style="margin:8px 0"><b>'+(sub.title||sub.id)+'</b></div>';
+    html += '<div class="awg-link">sing-box JSON: '+base+'/api/awg-sub/'+sub.id+'</div>';
+    html += '<div class="awg-link">Share links: '+base+'/api/share-links/'+sub.id+'</div>';
+  }
+  document.getElementById('awg-links').innerHTML = html || '<div class="meta">Нет активных подписок</div>';
+}
+async function saveSettings(){
+  await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    engine: document.getElementById('engine').value,
+    routing_mode: document.getElementById('routing_mode').value
+  })});
+  load();
+}
+async function addSub(){
+  await api('/api/subscriptions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    url: document.getElementById('sub_url').value,
+    fallback: document.getElementById('sub_fallback').value
+  })});
+  document.getElementById('sub_url').value='';
+  document.getElementById('sub_fallback').value='';
+  load();
+}
+async function removeSub(id){
+  await api('/api/subscriptions?id='+id,{method:'DELETE'});
+  load();
+}
+async function sync(){
+  await api('/api/sync',{method:'POST'});
+  load();
+}
+async function connect(sid, tag){
+  await api('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sub_id:sid,tag:tag})});
+  load();
+}
+async function disconnect(){
+  await api('/api/disconnect',{method:'POST'});
+  load();
+}
+async function ping(sid, tag){
+  const r = await api('/api/ping?sub_id='+sid+'&tag='+tag);
+  alert(r.ok ? 'Ping: '+r.ms+'ms' : 'Error: '+r.error);
+}
+load();
+</script>
+</body>
+</html>
